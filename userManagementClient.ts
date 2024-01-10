@@ -1,5 +1,5 @@
-import { LoginReq, LoginResp } from "../user-management-server/user-management-common/login";
-import { LogoutReq, LogoutResp } from "../user-management-server/user-management-common/logout";
+import { LoginReq, LoginResp } from "./user-management-common/login";
+import { LogoutReq, LogoutResp } from "./user-management-common/logout";
 import { ApiResp } from "./user-management-common/apiRoutesCommon";
 import { RegisterReq, RegisterResp } from "./user-management-common/register";
 
