@@ -1,0 +1,3 @@
+[submodule "user-management-common"]
+	path = user-management-common
+	url = git@github.com:preitinger/user-management-common.git
