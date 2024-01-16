@@ -26,7 +26,7 @@ type FetcherState =
     'error';
 
 type RequestTask = {
-    req: any;
+    req: {type: string};
     executer: PromiseExecuter;
 }
 
@@ -55,6 +55,7 @@ export class AccumulatedFetcher {
         }
 
         const req: AccumulatedReq = {
+            type: 'AccumulatedReq',
             requests: this.beingSent.map(x => x.req)
         }
         apiFetchPost<AccumulatedReq, AccumulatedResp>(this.url, req, this.signal).then(resp => {
@@ -82,7 +83,7 @@ export class AccumulatedFetcher {
         })
     }
 
-    push<Req, Resp>(req: Req): Promise<ApiResp<Resp>> {
+    push<Req extends {type: string}, Resp>(req: Req): Promise<ApiResp<Resp>> {
         if (this.signal?.aborted) return Promise.reject(new Error('signal of AccumulatedFetcher aborted'));
         return new Promise<ApiResp<Resp>>((resolve, reject) => {
             this.toSend.push({
