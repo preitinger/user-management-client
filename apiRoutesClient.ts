@@ -80,6 +80,18 @@ export class AccumulatedFetcher {
             } else {
                 this.state = 'idle';
             }
+        }).catch(reason => {
+            if (reason instanceof Error) {
+                if (reason.message === 'Failed to fetch') {
+                    this.connectionHandler('No connection to the server.');
+                } else {
+                    this.connectionHandler(`Unknown server error(${reason.name}): ${reason.message}`);
+                }
+            } else {
+                this.connectionHandler('Caught unknown in apiFetchPost: ' + JSON.stringify(reason));
+            }
+            this.state = 'error';
+            return;
         })
     }
 
