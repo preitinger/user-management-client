@@ -30,6 +30,9 @@ type RequestTask = {
     executer: PromiseExecuter;
 }
 
+/**
+ * @deprecated will be replaced by AccumulatedFetching in AccumulatedFetching.ts
+ */
 export class AccumulatedFetcher {
     private url: string;
     private connectionHandler: ConnectionHandler;

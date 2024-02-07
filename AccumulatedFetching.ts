@@ -5,16 +5,27 @@ export interface AccumulatedFetchingHandler {
     fetchError: (error: string) => void;
 }
 
+export type AccumulatedFetchingLoopState = 'waiting' | 'fetching' | 'closed';
+
 export class AccumulatedFetching {
     constructor(url: string, handler: AccumulatedFetchingHandler) {
         this.url = url;
         this.handler = handler;
+        this.abortController = new AbortController();
         this.fetchLoop();
+    }
+
+    getState(): AccumulatedFetchingLoopState {
+        return this.state;
+    }
+
+    isInterrupted() {
+        return this.interrupted;
     }
 
     setInterrupted(interrupted: boolean) {
         this.interrupted = interrupted;
-        this.wakeUpLoopEventually();
+        this.wakeUpLoopMaybe();
     }
 
     push<Req extends { type: string }, Resp>(req: Req): Promise<ApiResp<Resp>> {
@@ -27,32 +38,39 @@ export class AccumulatedFetching {
                 }
             };
             this.inQueue.push(task);
-            this.wakeUpLoopEventually();
-            // if (!this.interrupted && this.resolveQueueNotEmptyAndNotInterrupted != null) {
-            //     this.resolveQueueNotEmptyAndNotInterrupted();
-            //     this.resolveQueueNotEmptyAndNotInterrupted = null;
-            // }
-
+            this.wakeUpLoopMaybe();
         })
+    }
+
+    close() {
+        this.abortController.abort();
+        this.closing = true;
+        this.wakeUpLoopMaybe();
+    }
+
+    isClosing() {
+        return this.closing;
     }
 
     private mustWait(): boolean {
         console.log('mustWait: inQueue.length', this.inQueue.length, 'outQueue.length', this.outQueue.length, 'interrupted', this.interrupted);
-        return (this.inQueue.length === 0 && this.outQueue.length === 0) || this.interrupted;
+        return !this.closing && ((this.inQueue.length === 0 && this.outQueue.length === 0) || this.interrupted);
     }
 
-    private wakeUpLoopEventually() {
+    private wakeUpLoopMaybe() {
         if (this.resolveQueueNotEmptyAndNotInterrupted && !this.mustWait()) {
             this.resolveQueueNotEmptyAndNotInterrupted();
         }
     }
 
     private async fetchLoop() {
-        while (true) {
+        while (!this.closing) {
             if (this.mustWait()) {
+                this.state = 'waiting';
                 await new Promise<void>((resolve) => {
                     this.resolveQueueNotEmptyAndNotInterrupted = resolve;
                 });
+                if (this.closing) continue;
             }
             if (this.mustWait()) {
                 throw new Error('queues empty or interrupted after await');
@@ -67,7 +85,8 @@ export class AccumulatedFetching {
                 requests: this.outQueue.map(x => x.req)
             }
             try {
-                const resp = await apiFetchPost<AccumulatedReq, AccumulatedResp>(this.url, req);
+                this.state = 'fetching';
+                const resp = await apiFetchPost<AccumulatedReq, AccumulatedResp>(this.url, req, this.abortController.signal);
                 switch (resp.type) {
                     case 'success': {
                         if (resp.responses.length !== this.outQueue.length) {
@@ -98,11 +117,14 @@ export class AccumulatedFetching {
                         this.handler.fetchError(`Unknown server error(${reason.name}): ${reason.message}`);
                     }
                 } else {
+                    console.warn('Caught unknown in apiFetchPost', reason);
                     this.handler.fetchError('Caught unknown in apiFetchPost: ' + JSON.stringify(reason));
                 }
             }
 
         }
+
+        this.state = 'closed';
     }
 
     private swapQueues() {
@@ -117,6 +139,9 @@ export class AccumulatedFetching {
     private inQueue: RequestTask[] = [];
     private outQueue: RequestTask[] = [];
     private resolveQueueNotEmptyAndNotInterrupted: null | ((value: void | PromiseLike<void>) => void) = null;
+    private abortController: AbortController;
+    private closing: boolean = false;
+    private state: AccumulatedFetchingLoopState = 'waiting';
 }
 
 
