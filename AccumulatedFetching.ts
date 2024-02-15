@@ -1,3 +1,4 @@
+import FixedAbortController from "./FixedAbortController";
 import { apiFetchPost } from "./apiRoutesClient";
 import { AccumulatedReq, AccumulatedResp, ApiResp } from "./user-management-common/apiRoutesCommon";
 
@@ -8,10 +9,15 @@ export interface AccumulatedFetchingHandler {
 export type AccumulatedFetchingLoopState = 'waiting' | 'fetching' | 'closed';
 
 export class AccumulatedFetching {
-    constructor(url: string, handler: AccumulatedFetchingHandler) {
+    constructor(url: string, handler: AccumulatedFetchingHandler, abortController?: AbortController) {
         this.url = url;
         this.handler = handler;
-        this.abortController = new AbortController();
+        this.abortController = abortController ?? new FixedAbortController();
+        const abortListener = () => {
+            this.wakeUpLoopMaybe();
+            this.abortController.signal.removeEventListener('abort', abortListener);
+        }
+        this.abortController.signal.addEventListener('abort', abortListener);
         this.fetchLoop();
     }
 
@@ -43,18 +49,17 @@ export class AccumulatedFetching {
     }
 
     close() {
+        // console.log('close: will abort abortController');
         this.abortController.abort();
-        this.closing = true;
-        this.wakeUpLoopMaybe();
     }
 
     isClosing() {
-        return this.closing;
+        return this.abortController.signal.aborted;
     }
 
     private mustWait(): boolean {
-        console.log('mustWait: inQueue.length', this.inQueue.length, 'outQueue.length', this.outQueue.length, 'interrupted', this.interrupted);
-        return !this.closing && ((this.inQueue.length === 0 && this.outQueue.length === 0) || this.interrupted);
+        // console.log('mustWait: inQueue.length', this.inQueue.length, 'outQueue.length', this.outQueue.length, 'interrupted', this.interrupted);
+        return !this.isClosing() && ((this.inQueue.length === 0 && this.outQueue.length === 0) || this.interrupted);
     }
 
     private wakeUpLoopMaybe() {
@@ -64,13 +69,13 @@ export class AccumulatedFetching {
     }
 
     private async fetchLoop() {
-        while (!this.closing) {
+        while (!this.isClosing()) {
             if (this.mustWait()) {
                 this.state = 'waiting';
                 await new Promise<void>((resolve) => {
                     this.resolveQueueNotEmptyAndNotInterrupted = resolve;
                 });
-                if (this.closing) continue;
+                if (this.isClosing()) continue;
             }
             if (this.mustWait()) {
                 throw new Error('queues empty or interrupted after await');
@@ -140,7 +145,6 @@ export class AccumulatedFetching {
     private outQueue: RequestTask[] = [];
     private resolveQueueNotEmptyAndNotInterrupted: null | ((value: void | PromiseLike<void>) => void) = null;
     private abortController: AbortController;
-    private closing: boolean = false;
     private state: AccumulatedFetchingLoopState = 'waiting';
 }
 

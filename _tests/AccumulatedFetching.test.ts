@@ -1,6 +1,7 @@
 import { ChatReq } from "../../chat/chat-common";
 import { AccumulatedFetching } from "../AccumulatedFetching"
 import { AccumulatedReq, AccumulatedResp, ApiResp } from "../../user-management-server/user-management-common/apiRoutesCommon";
+import PromiseChecker from "../../pr-test-utils/PromiseChecker";
 
 jest.useFakeTimers();
 
@@ -79,7 +80,7 @@ global.fetch = async (url: URL | RequestInfo, init?: RequestInit | undefined) =>
 }
 
 let triggerFetchResponse: (() => void) | null = null;
-let triggerFetchError: (() => void) | null = null;
+let triggerFetchError: ((reason: any) => void) | null = null;
 
 const echoJsonProducer: FetchResponseProducer = async (url: string, body?: string | undefined) => {
     console.log('nextJson: body=', body);
@@ -114,27 +115,6 @@ beforeEach(() => {
     registeredFetchResponseProducers['/testUrl'] = echoJsonProducer;
 });
 
-class PromiseChecker<T> {
-    constructor(prom: Promise<T>) {
-        prom.then(() => {
-            this.resolved = true;
-        }).catch(reason => {
-            this.rejected = true;
-        })
-    }
-
-    hasResolved() {
-        return this.resolved;
-    }
-
-    hasRejected() {
-        return this.rejected;
-    }
-
-    private resolved: boolean = false;
-    private rejected: boolean = false;
-}
-
 test('1 push', async () => {
     const f = new AccumulatedFetching('/testUrl', {
         fetchError: (error) => {
@@ -145,7 +125,7 @@ test('1 push', async () => {
         type: 'chat',
         chatId: 'bla',
         lastEventId: -1,
-        msg: 'bla',
+        lines: ['bla'],
         token: 'bla',
         user: 'bla'
     }
@@ -170,6 +150,7 @@ test('1 push', async () => {
     f.close();
     await fakeSleep(1);
     expect(f.getState()).toBe('closed');
+    console.log('The End');
 })
 
 test('2 pushes', async() => {
@@ -182,7 +163,7 @@ test('2 pushes', async() => {
         type: 'chat',
         chatId: 'bla',
         lastEventId: -1,
-        msg: '1',
+        lines: ['1'],
         token: 'bla',
         user: 'bla'
     }
@@ -190,7 +171,7 @@ test('2 pushes', async() => {
         type: 'chat',
         chatId: 'bla',
         lastEventId: -1,
-        msg: '2',
+        lines: ['2'],
         token: 'bla',
         user: 'bla'
     }
@@ -223,7 +204,7 @@ test('setInterrupted', async () => {
         type: 'chat',
         chatId: 'bla',
         lastEventId: -1,
-        msg: '1',
+        lines: ['1'],
         token: 'bla',
         user: 'bla'
     }
@@ -240,7 +221,7 @@ test('setInterrupted', async () => {
         type: 'chat',
         chatId: 'bla',
         lastEventId: -1,
-        msg: '2',
+        lines: ['2'],
         token: 'bla',
         user: 'bla'
     }
@@ -252,7 +233,7 @@ test('setInterrupted', async () => {
         type: 'chat',
         chatId: 'bla',
         lastEventId: -1,
-        msg: '3',
+        lines: ['3'],
         token: 'bla',
         user: 'bla'
     }
@@ -300,7 +281,7 @@ test('fetch error', async () => {
         type: 'chat',
         chatId: 'bla',
         lastEventId: -1,
-        msg: 'bla',
+        lines: ['bla'],
         token: 'bla',
         user: 'bla'
     }
@@ -310,7 +291,7 @@ test('fetch error', async () => {
     await fakeSleep(1000);
     expect(f.isInterrupted()).toBe(false);
     if (triggerFetchError == null) throw new Error('triggerFetchError not set');
-    triggerFetchError();
+    triggerFetchError(new Error('Failed to fetch'));
     expect(fetchError.mock.calls.length).toBe(0);
     await fakeSleep(1000);
 
