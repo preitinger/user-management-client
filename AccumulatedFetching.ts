@@ -1,4 +1,4 @@
-import FixedAbortController from "./FixedAbortController";
+import FixedAbortController from "../pr-client-utils/FixedAbortController";
 import { apiFetchPost } from "./apiRoutesClient";
 import { AccumulatedReq, AccumulatedResp, ApiResp } from "./user-management-common/apiRoutesCommon";
 
@@ -15,9 +15,15 @@ export class AccumulatedFetching {
         this.abortController = abortController ?? new FixedAbortController();
         const abortListener = () => {
             this.wakeUpLoopMaybe();
+            this.inQueue.forEach(task => {
+                task.executer.reject(new DOMException('Fetch task aborted because abort signal of AccumulatedFetching was aborted', 'AbortError'));
+            })
             this.abortController.signal.removeEventListener('abort', abortListener);
         }
-        this.abortController.signal.addEventListener('abort', abortListener);
+        this.abortController.signal.addEventListener('abort', abortListener, {
+            once: true
+        });
+
         this.fetchLoop();
     }
 
@@ -26,15 +32,22 @@ export class AccumulatedFetching {
     }
 
     isInterrupted() {
+        this.abortController.signal.throwIfAborted();
         return this.interrupted;
     }
 
+    /**
+     * interrupt or continue the processing of the fetches.
+     * @param interrupted 
+     */
     setInterrupted(interrupted: boolean) {
+        this.abortController.signal.throwIfAborted();
         this.interrupted = interrupted;
         this.wakeUpLoopMaybe();
     }
 
-    push<Req extends { type: string }, Resp>(req: Req): Promise<ApiResp<Resp>> {
+    pushRaw<Req extends { type: string }, Resp>(req: Req): Promise<ApiResp<Resp>> {
+        this.abortController.signal.throwIfAborted();
         return new Promise<ApiResp<Resp>>((resolve, reject) => {
             const task = {
                 req: req,
@@ -48,8 +61,22 @@ export class AccumulatedFetching {
         })
     }
 
+    push<Req extends { type: string }, Resp>(req: Req, signal: AbortSignal): Promise<ApiResp<Resp>> {
+        let abortListener: () => void;
+        const abortProm = new Promise<ApiResp<Resp>>((res, rej) => {
+            signal.addEventListener('abort', (abortListener = () => {
+                rej(signal.reason);
+            }), {
+                once: true
+            })
+        })
+        return Promise.race([abortProm, this.pushRaw<Req, Resp>(req)]).finally(() => {
+            signal.removeEventListener('abort', abortListener);
+        })
+    }
+
     close() {
-        // console.log('close: will abort abortController');
+        console.log('close: will abort abortController');
         this.abortController.abort();
     }
 
@@ -69,64 +96,74 @@ export class AccumulatedFetching {
     }
 
     private async fetchLoop() {
-        while (!this.isClosing()) {
-            if (this.mustWait()) {
-                this.state = 'waiting';
-                await new Promise<void>((resolve) => {
-                    this.resolveQueueNotEmptyAndNotInterrupted = resolve;
-                });
-                if (this.isClosing()) continue;
-            }
-            if (this.mustWait()) {
-                throw new Error('queues empty or interrupted after await');
-            }
-
-            if (this.outQueue.length === 0) {
-                this.swapQueues();
-            }
-
-            const req: AccumulatedReq = {
-                type: 'AccumulatedReq',
-                requests: this.outQueue.map(x => x.req)
-            }
-            try {
-                this.state = 'fetching';
-                const resp = await apiFetchPost<AccumulatedReq, AccumulatedResp>(this.url, req, this.abortController.signal);
-                switch (resp.type) {
-                    case 'success': {
-                        if (resp.responses.length !== this.outQueue.length) {
-                            throw new Error(`Illegal state: resp.responses.length=${resp.responses.length} !== ${this.outQueue.length} = this.beingSent.length`);
-                        }
-                        for (let i = 0; i < resp.responses.length; ++i) {
-                            this.outQueue[i].executer.resolve(resp.responses[i]);
-                        }
-
-                        this.outQueue.length = 0;
-                        this.swapQueues();
-                        break;
-                    }
-                    case 'error': {
-                        this.interrupted = true;
-                        this.handler.fetchError(resp.error);
-                        break;
-                    }
-                    default:
-                        throw new Error('Unexpected response: ' + JSON.stringify(resp));
+        try {
+            while (!this.isClosing()) {
+                if (this.mustWait()) {
+                    this.state = 'waiting';
+                    await new Promise<void>((resolve) => {
+                        this.resolveQueueNotEmptyAndNotInterrupted = resolve;
+                    });
+                    if (this.isClosing()) continue;
                 }
-            } catch (reason) {
-                this.interrupted = true;
-                if (reason instanceof Error) {
-                    if (reason.message === 'Failed to fetch') {
-                        this.handler.fetchError('No connection to the server.');
+                if (this.mustWait()) {
+                    throw new Error('queues empty or interrupted after await');
+                }
+
+                if (this.outQueue.length === 0) {
+                    this.swapQueues();
+                }
+
+                const req: AccumulatedReq = {
+                    type: 'AccumulatedReq',
+                    requests: this.outQueue.map(x => x.req)
+                }
+                try {
+                    this.state = 'fetching';
+                    const resp = await apiFetchPost<AccumulatedReq, AccumulatedResp>(this.url, req, this.abortController.signal);
+                    switch (resp.type) {
+                        case 'success': {
+                            if (resp.responses.length !== this.outQueue.length) {
+                                throw new Error(`Illegal state: resp.responses.length=${resp.responses.length} !== ${this.outQueue.length} = this.beingSent.length`);
+                            }
+                            for (let i = 0; i < resp.responses.length; ++i) {
+                                this.outQueue[i].executer.resolve(resp.responses[i]);
+                            }
+
+                            this.outQueue.length = 0;
+                            this.swapQueues();
+                            break;
+                        }
+                        case 'error': {
+                            this.interrupted = true;
+                            this.handler.fetchError(resp.error);
+                            break;
+                        }
+                        default:
+                            throw new Error('Unexpected response: ' + JSON.stringify(resp));
+                    }
+                } catch (reason) {
+                    console.log('caught silently', reason);
+                    this.abortController.signal.throwIfAborted();
+                    this.interrupted = true;
+                    if (reason instanceof Error) {
+                        if (reason.message === 'Failed to fetch') {
+                            this.handler.fetchError('No internet connection.');
+                        } else {
+                            this.handler.fetchError(`Unknown server error(${reason.name}): ${reason.message}`);
+                        }
                     } else {
-                        this.handler.fetchError(`Unknown server error(${reason.name}): ${reason.message}`);
+                        console.warn('Caught unknown in apiFetchPost', reason);
+                        this.handler.fetchError('Caught unknown in apiFetchPost: ' + JSON.stringify(reason));
                     }
-                } else {
-                    console.warn('Caught unknown in apiFetchPost', reason);
-                    this.handler.fetchError('Caught unknown in apiFetchPost: ' + JSON.stringify(reason));
                 }
+
             }
 
+        } catch (reason: any) {
+            console.log('catch in fetch loop');
+            if (reason.name !== 'AbortError') {
+                console.error(reason);
+            }
         }
 
         this.state = 'closed';

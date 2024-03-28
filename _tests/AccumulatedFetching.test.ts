@@ -131,7 +131,7 @@ test('1 push', async () => {
     }
     await fakeSleep(1000);
     expect(f.getState()).toBe('waiting');
-    const resp = f.push(req);
+    const resp = f.pushRaw(req);
     await fakeSleep(1);
     expect(f.getState()).toBe('fetching');
     const checkResp = new PromiseChecker(resp);
@@ -147,6 +147,7 @@ test('1 push', async () => {
     expect(checkResp.hasResolved()).toBeTruthy();
     console.log('resp', resp);
     expect(await resp).toEqual(req);
+    console.log('before f.close()');
     f.close();
     await fakeSleep(1);
     expect(f.getState()).toBe('closed');
@@ -179,8 +180,8 @@ test('2 pushes', async() => {
     await fakeSleep(10);
     expect(f.getState()).toBe('waiting');
 
-    const respProm1 = f.push<any, any>(req1);
-    const respProm2 = f.push<any, any>(req2);
+    const respProm1 = f.pushRaw<any, any>(req1);
+    const respProm2 = f.pushRaw<any, any>(req2);
 
     await fakeSleep(0);
     expect(f.getState()).toBe('fetching');
@@ -208,7 +209,7 @@ test('setInterrupted', async () => {
         token: 'bla',
         user: 'bla'
     }
-    const respProm1 = f.push(req1);
+    const respProm1 = f.pushRaw(req1);
     const checkProm1 = new PromiseChecker(respProm1);
     await fakeSleep(1000);
     expect(f.getState()).toBe('waiting');
@@ -225,7 +226,7 @@ test('setInterrupted', async () => {
         token: 'bla',
         user: 'bla'
     }
-    const respProm2 = f.push(req2);
+    const respProm2 = f.pushRaw(req2);
     const checkProm2 = new PromiseChecker(respProm2);
     await fakeSleep(0);
     expect(f.getState()).toBe('fetching');
@@ -237,7 +238,7 @@ test('setInterrupted', async () => {
         token: 'bla',
         user: 'bla'
     }
-    const respProm3 = f.push(req3);
+    const respProm3 = f.pushRaw(req3);
     const checkProm3 = new PromiseChecker(respProm3);
     await fakeSleep(1000);
     expect(f.getState()).toBe('fetching');
@@ -286,7 +287,7 @@ test('fetch error', async () => {
         user: 'bla'
     }
 
-    const resp = f.push(req);
+    const resp = f.pushRaw(req);
     const checkResp = new PromiseChecker(resp);
     await fakeSleep(1000);
     expect(f.isInterrupted()).toBe(false);
