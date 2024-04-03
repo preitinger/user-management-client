@@ -1,4 +1,5 @@
 import FixedAbortController from "../pr-client-utils/FixedAbortController";
+import { myAddEventListener } from "../pr-client-utils/eventListeners";
 import { apiFetchPost } from "./apiRoutesClient";
 import { AccumulatedReq, AccumulatedResp, ApiResp } from "./user-management-common/apiRoutesCommon";
 
@@ -62,16 +63,18 @@ export class AccumulatedFetching {
     }
 
     push<Req extends { type: string }, Resp>(req: Req, signal: AbortSignal): Promise<ApiResp<Resp>> {
-        let abortListener: () => void;
+        // let abortListener: () => void;
+        let tidyUp: (() => void) | null = null;
         const abortProm = new Promise<ApiResp<Resp>>((res, rej) => {
-            signal.addEventListener('abort', (abortListener = () => {
+            tidyUp = myAddEventListener(signal, 'abort', () => {
                 rej(signal.reason);
-            }), {
+            }, {
                 once: true
             })
         })
         return Promise.race([abortProm, this.pushRaw<Req, Resp>(req)]).finally(() => {
-            signal.removeEventListener('abort', abortListener);
+            if (tidyUp == null) throw new Error('tidyUp null');
+            tidyUp()
         })
     }
 
