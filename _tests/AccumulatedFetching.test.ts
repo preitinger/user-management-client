@@ -1,4 +1,5 @@
-import { ChatReq } from "../../chat/chat-common";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// import { ChatReq } from "../../chat/chat-common";
 import { AccumulatedFetching } from "../AccumulatedFetching"
 import { AccumulatedReq, AccumulatedResp, ApiResp } from "../../user-management-client/user-management-common/apiRoutesCommon";
 import PromiseChecker from "../../pr-test-utils/PromiseChecker";
@@ -7,6 +8,18 @@ jest.useFakeTimers();
 
 const NYI = () => {
     throw new Error('Not implemented');
+}
+
+export type ChatReq = {
+    type: 'chat';
+    chatId: string;
+    user: string;
+    token: string;
+    lines: string[];
+    /**
+     * If none yet, -1
+     */
+    lastEventId: number;
 }
 
 // function sleep(ms: number): Promise<void> {
@@ -73,7 +86,7 @@ global.fetch = async (url: URL | RequestInfo, init?: RequestInit | undefined) =>
             return createNextFetchResponse(url.toString(), init?.body);
         },
         text: NYI,
-
+        bytes: NYI,
     }
 
     return res;
@@ -274,7 +287,8 @@ test('setInterrupted', async () => {
 })
 
 test('fetch error', async () => {
-    const fetchError = jest.fn((error: string) => {})
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const fetchError = jest.fn((_error: string) => {})
     const f = new AccumulatedFetching('/testUrl', {
         fetchError: fetchError
     });
