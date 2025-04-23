@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import FixedAbortController from "../pr-client-utils/FixedAbortController";
 import { myAddEventListener } from "../pr-client-utils/eventListeners";
 import { apiFetchPost } from "./apiRoutesClient";
