@@ -1,6 +1,6 @@
 import { ChatReq } from "../../chat/chat-common";
 import { AccumulatedFetching } from "../AccumulatedFetching"
-import { AccumulatedReq, AccumulatedResp, ApiResp } from "../../user-management-server/user-management-common/apiRoutesCommon";
+import { AccumulatedReq, AccumulatedResp, ApiResp } from "../../user-management-client/user-management-common/apiRoutesCommon";
 import PromiseChecker from "../../pr-test-utils/PromiseChecker";
 
 jest.useFakeTimers();
